@@ -68,7 +68,46 @@ chmod 700 data backups
 sudo docker compose config --quiet
 ```
 
-Replace `SERVER_PASS` with a unique password of at least five characters before starting. Keep the surrounding single quotes if the password contains `$` or `#`. Do not include the password in the server name. Keep `.env` private; Docker administrators can inspect container environment variables.
+### Environment files
+
+| File | Purpose | Commit to Git? |
+| --- | --- | --- |
+| `.env.example` | Shared configuration template with a placeholder password; copy to `.env` before deployment | Yes |
+| `.env` | Actual settings and password for this deployment; used by the commands in this README | No; ignored |
+| `.env.production` (optional) | Separate production settings; copy the template and supply `--env-file .env.production` explicitly on each Compose command | No; ignored |
+
+Use `.env` for the standard single-server deployment. If you choose `.env.production`, protect it with `chmod 600 .env.production` and use commands such as `sudo docker compose --env-file .env.production up -d`. That filename is not selected automatically, and selecting another environment file does not create an isolated server or separate world storage.
+
+### Configurable environment variables
+
+These are the variables wired into `docker-compose.yml` and provided in `.env.example`:
+
+| Variable | Default / template value | Required change | Purpose |
+| --- | --- | --- | --- |
+| `SERVER_NAME` | `Private Valheim` | Optional | Display name of the server |
+| `WORLD_NAME` | `Dedicated` | Optional for a new world; match the save name when importing | Selects the world to load or create |
+| `SERVER_PASS` | Template placeholder; no Compose fallback | **Yes** | Join password; use a unique value of at least five characters |
+| `TZ` | `Asia/Manila` | Optional | Time zone for container schedules and local timestamps |
+| `VALHEIM_IMAGE` | `ghcr.io/community-valheim-tools/valheim-server:latest` | Optional | Container image reference; can be set to a tested image digest |
+
+Compose rejects an unset or empty `SERVER_PASS`, but does not reject the template placeholder or validate its length. Replace it before starting. Keep the surrounding single quotes if the password contains `$` or `#`. Do not include the password in the server name. Keep `.env` private; Docker administrators can inspect container environment variables.
+
+### Settings defined directly in Compose
+
+The following values are fixed in the service's `environment` section. Edit `docker-compose.yml` to change them; adding them to `.env` alone will not override these values.
+
+| Variable | Configured value | Purpose |
+| --- | --- | --- |
+| `SERVER_PUBLIC` | `false` | Keeps the server off the public list |
+| `CROSSPLAY` | `false` | Uses Steam networking; see the crossplay notes below before enabling |
+| `UPDATE_CRON` | Empty string | Disables scheduled game update checks; startup can still update |
+| `RESTART_CRON` | Empty string | Disables scheduled restarts |
+| `BACKUPS` | `true` | Enables world backups |
+| `BACKUPS_CRON` | `5 * * * *` | Runs backups hourly at minute 5 in the configured time zone |
+| `BACKUPS_MAX_AGE` | `7` | Retains scheduled backups for seven days |
+| `BACKUPS_DIRECTORY` | `/config/backups` | Container backup path, mounted at `data/config/backups` on the host |
+| `STATUS_HTTP` | `false` | Disables the built-in HTTP status service |
+| `SUPERVISOR_HTTP` | `false` | Disables the HTTP process-management service |
 
 Set `WORLD_NAME` once and keep it stable: changing it selects another world. To migrate an existing world, stop the server and copy its complete save into `data/config/worlds_local/`. Preserve the whole world directory for directory-based saves, or both matching `.db` and `.fwl` files for older saves. Use the matching world name.
 
@@ -119,6 +158,46 @@ getent ahostsv4 valheim.example.com
 ```
 
 The result should be your server IP. Allow time for cached DNS answers to expire after changes.
+
+### Production layout: Nginx, SSL, and port 8888
+
+Use Nginx with HTTPS for the future stats API. Valheim clients cannot connect through a normal HTTP/HTTPS reverse proxy: gameplay uses UDP. Both services can share your Linux machine and public IP with separate hostnames and ports.
+
+| Service | Public address | Traffic path | Cloudflare DNS record |
+| --- | --- | --- | --- |
+| Valheim game | `valheim.example.com:2456` | UDP 2456–2457 → Valheim container | `A` record pointing to your IP, **DNS only** |
+| Future stats API | `https://api.example.com` | HTTPS TCP 443 → Nginx → HTTP API on port 8888 | `A` record pointing to your IP, **Proxied** |
+
+Players enter `valheim.example.com:2456` in the game, without an `https://` prefix. Keep the existing Valheim port mapping:
+
+```yaml
+ports:
+  - "2456-2457:2456-2457/udp"
+```
+
+Publishing `8888:8888` defaults to TCP and does not make Valheim an HTTP service or move its listening ports. SSL certificates on Nginx secure the API's HTTPS connection; they do not add SSL to Valheim gameplay.
+
+When implementing the API, if Nginx runs directly on the Linux host, add this mapping to the **API service**, not the Valheim service:
+
+```yaml
+ports:
+  - "127.0.0.1:8888:8888"
+```
+
+The API application must listen on `0.0.0.0:8888` inside its container. The mapping makes it reachable through the host's loopback address, allowing Nginx to forward requests without publicly publishing the API port. Configure Nginx's HTTPS virtual host for `api.example.com` to proxy to `http://127.0.0.1:8888`.
+
+If Nginx also runs in Docker, put Nginx and the API on a shared Docker network and proxy to `http://api:8888`, where `api` is the API service name. No host port mapping for the API is needed in that layout; `127.0.0.1` inside the Nginx container refers to Nginx's own container.
+
+For the future HTTPS deployment:
+
+1. Install and configure Nginx with an HTTPS virtual host for `api.example.com` and a certificate covering that hostname. Use a publicly trusted certificate if direct browser access to the origin is needed, or a Cloudflare Origin CA certificate for access through Cloudflare.
+2. Add the proxied `api` DNS record shown above and set Cloudflare SSL/TLS mode to **Full (strict)** so the origin connection is also encrypted and its certificate validated.
+3. Allow inbound TCP 443 at the provider and host firewalls. Allow TCP 80 if using HTTP-to-HTTPS redirects or an HTTP certificate-validation flow. Keep the database and API backend port private.
+4. Configure certificate renewal as appropriate for the certificate issuer, validate the Nginx configuration with `sudo nginx -t`, then reload Nginx and test an implemented API endpoint over HTTPS.
+
+These are deployment instructions for the future API; the current Compose file contains only the game server. See [Cloudflare proxy behavior](https://developers.cloudflare.com/dns/proxy-status/) for the distinction between proxied and DNS-only hostnames.
+
+Nginx can optionally forward game traffic using its separate [UDP `stream` proxy module](https://nginx.org/en/docs/stream/ngx_stream_proxy_module.html). That requires UDP listeners and forwarding for the game ports, does not add HTTPS to gameplay, and still requires a DNS-only game hostname with the ordinary Cloudflare setup. Direct UDP publishing is the simpler layout for this deployment.
 
 ## 5. Start and join
 
