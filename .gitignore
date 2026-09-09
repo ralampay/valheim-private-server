@@ -1,0 +1,28 @@
+# Local environment files and credentials (keep the configuration template)
+.env
+.env.*
+!.env.example
+/secrets/
+
+# Valheim saves, downloaded binaries, configuration, and backup archives
+/data/
+/backups/
+
+# Operational logs
+*.log
+*.log.*
+
+# Machine-specific Compose overrides
+/compose.override.yml
+/compose.override.yaml
+/docker-compose.override.yml
+/docker-compose.override.yaml
+
+# Local editor and OS files
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db

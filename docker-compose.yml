@@ -1,0 +1,34 @@
+services:
+  valheim:
+    image: ${VALHEIM_IMAGE:-ghcr.io/community-valheim-tools/valheim-server:latest}
+    platform: linux/amd64
+    restart: unless-stopped
+    stop_grace_period: 2m
+    cap_add:
+      - SYS_NICE
+    ports:
+      - "2456-2457:2456-2457/udp"
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-Private Valheim}
+      WORLD_NAME: ${WORLD_NAME:-Dedicated}
+      SERVER_PASS: ${SERVER_PASS:?Set SERVER_PASS in .env before starting}
+      SERVER_PUBLIC: "false"
+      CROSSPLAY: "false"
+      TZ: ${TZ:-Asia/Manila}
+      # Update at startup; disable scheduled updates and restarts.
+      UPDATE_CRON: ""
+      RESTART_CRON: ""
+      BACKUPS: "true"
+      BACKUPS_CRON: "5 * * * *"
+      BACKUPS_MAX_AGE: "7"
+      BACKUPS_DIRECTORY: /config/backups
+      STATUS_HTTP: "false"
+      SUPERVISOR_HTTP: "false"
+    volumes:
+      - ./data/config:/config
+      - ./data/server:/opt/valheim
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
