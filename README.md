@@ -87,10 +87,13 @@ These are the variables wired into `docker-compose.yml` and provided in `.env.ex
 | `SERVER_NAME` | `Private Valheim` | Optional | Display name of the server |
 | `WORLD_NAME` | `Dedicated` | Optional for a new world; match the save name when importing | Selects the world to load or create |
 | `SERVER_PASS` | Template placeholder; no Compose fallback | **Yes** | Join password; use a unique value of at least five characters |
+| `SERVER_ARGS` | `-modifier resources muchmore -modifier combat veryhard` | Optional | Applies 2x resource drops and the highest combat difficulty |
 | `TZ` | `Asia/Manila` | Optional | Time zone for container schedules and local timestamps |
 | `VALHEIM_IMAGE` | `ghcr.io/community-valheim-tools/valheim-server:latest` | Optional | Container image reference; can be set to a tested image digest |
 
 Compose rejects an unset or empty `SERVER_PASS`, but does not reject the template placeholder or validate its length. Replace it before starting. Keep the surrounding single quotes if the password contains `$` or `#`. Do not include the password in the server name. Keep `.env` private; Docker administrators can inspect container environment variables.
+
+`SERVER_ARGS` uses Valheim's built-in world modifiers and does not require mods on the server or clients. `resources muchmore` is the 2x resource setting, while `combat veryhard` is the maximum combat difficulty. These settings affect the selected world and are reapplied whenever the server starts. Set `SERVER_ARGS=''` to use normal modifiers. Stop the server cleanly before changing the value, then recreate it with `sudo docker compose up -d`.
 
 ### Settings defined directly in Compose
 

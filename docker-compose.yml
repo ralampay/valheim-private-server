@@ -14,6 +14,8 @@ services:
       SERVER_PASS: ${SERVER_PASS:?Set SERVER_PASS in .env before starting}
       SERVER_PUBLIC: "false"
       CROSSPLAY: "false"
+      # Vanilla world modifiers: 2x resource drops and maximum combat difficulty.
+      SERVER_ARGS: "${SERVER_ARGS--modifier resources muchmore -modifier combat veryhard}"
       TZ: ${TZ:-Asia/Manila}
       # Update at startup; disable scheduled updates and restarts.
       UPDATE_CRON: ""
