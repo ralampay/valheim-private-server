@@ -15,17 +15,17 @@ The RAM/CPU figures come from the [container maintainers](https://github.com/com
 
 ## 1. Install Docker on Linux
 
-Commands below target a fresh **Ubuntu 24.04 LTS amd64** machine with sudo access and your existing public IPv4 address. For another distribution, follow its [Docker Engine installation guide](https://docs.docker.com/engine/install/), then use the same Compose steps. If Docker is already installed, check `sudo docker compose version` and skip installation.
+Commands below target a fresh **Ubuntu 24.04 LTS amd64** machine and your existing public IPv4 address. Run the system installation commands from a root shell. For another distribution, follow its [Docker Engine installation guide](https://docs.docker.com/engine/install/), then use the same Compose steps. If Docker is already installed, check `docker compose version` and skip installation.
 
 Install from [Docker's Ubuntu apt repository](https://docs.docker.com/engine/install/ubuntu/):
 
 ```bash
-sudo apt update
-sudo apt install -y ca-certificates curl
-sudo install -m 0755 -d /etc/apt/keyrings
-sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-sudo chmod a+r /etc/apt/keyrings/docker.asc
-sudo tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF
+apt update
+apt install -y ca-certificates curl
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+tee /etc/apt/sources.list.d/docker.sources >/dev/null <<EOF
 Types: deb
 URIs: https://download.docker.com/linux/ubuntu
 Suites: $(. /etc/os-release && echo "$VERSION_CODENAME")
@@ -33,27 +33,33 @@ Components: stable
 Architectures: $(dpkg --print-architecture)
 Signed-By: /etc/apt/keyrings/docker.asc
 EOF
-sudo apt update
-sudo apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-sudo systemctl enable --now docker
-sudo docker compose version
+apt update
+apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+systemctl enable --now docker
+docker compose version
 ```
 
-If the machine has conflicting Docker/containerd packages already installed, resolve those using Docker's guide before installing these packages.
+If the machine has conflicting Docker/containerd packages already installed, resolve those using Docker's guide before installing these packages. To run Docker as your regular account, add that account to the `docker` group from the root shell, then sign out and back in so the new group membership takes effect:
+
+```bash
+usermod -aG docker your-user
+```
+
+Membership in the `docker` group grants host-level administrative access. Only grant it to trusted accounts.
 
 ## 2. Copy and configure this project
 
-On the Linux server:
+On the Linux server, create the deployment directory from the root shell, replacing `your-user` with the regular account that will manage the server:
 
 ```bash
-sudo mkdir -p /opt/valheim
-sudo chown "$(id -u):$(id -g)" /opt/valheim
+mkdir -p /opt/valheim
+chown your-user:your-user /opt/valheim
 ```
 
 From your local project directory, copy the deployment files (replace the SSH user and IP):
 
 ```bash
-scp docker-compose.yml .env.example README.md your-user@YOUR_PUBLIC_IP:/opt/valheim/
+scp docker-compose.yml .env.example README.md upgrade.sh your-user@YOUR_PUBLIC_IP:/opt/valheim/
 ```
 
 Back on the Linux server:
@@ -62,10 +68,11 @@ Back on the Linux server:
 cd /opt/valheim
 cp .env.example .env
 chmod 600 .env
+chmod +x upgrade.sh
 nano .env
 mkdir -p data/config data/server backups
 chmod 700 data backups
-sudo docker compose config --quiet
+docker compose config --quiet
 ```
 
 ### Environment files
@@ -76,7 +83,7 @@ sudo docker compose config --quiet
 | `.env` | Actual settings and password for this deployment; used by the commands in this README | No; ignored |
 | `.env.production` (optional) | Separate production settings; copy the template and supply `--env-file .env.production` explicitly on each Compose command | No; ignored |
 
-Use `.env` for the standard single-server deployment. If you choose `.env.production`, protect it with `chmod 600 .env.production` and use commands such as `sudo docker compose --env-file .env.production up -d`. That filename is not selected automatically, and selecting another environment file does not create an isolated server or separate world storage.
+Use `.env` for the standard single-server deployment. If you choose `.env.production`, protect it with `chmod 600 .env.production` and use commands such as `docker compose --env-file .env.production up -d`. That filename is not selected automatically, and selecting another environment file does not create an isolated server or separate world storage.
 
 ### Configurable environment variables
 
@@ -93,7 +100,7 @@ These are the variables wired into `docker-compose.yml` and provided in `.env.ex
 
 Compose rejects an unset or empty `SERVER_PASS`, but does not reject the template placeholder or validate its length. Replace it before starting. Keep the surrounding single quotes if the password contains `$` or `#`. Do not include the password in the server name. Keep `.env` private; Docker administrators can inspect container environment variables.
 
-`SERVER_ARGS` uses Valheim's built-in world modifiers and does not require mods on the server or clients. `resources muchmore` is the 2x resource setting, while `combat veryhard` is the maximum combat difficulty. These settings affect the selected world and are reapplied whenever the server starts. Set `SERVER_ARGS=''` to use normal modifiers. Stop the server cleanly before changing the value, then recreate it with `sudo docker compose up -d`.
+`SERVER_ARGS` uses Valheim's built-in world modifiers and does not require mods on the server or clients. `resources muchmore` is the 2x resource setting, while `combat veryhard` is the maximum combat difficulty. These settings affect the selected world and are reapplied whenever the server starts. Set `SERVER_ARGS=''` to use normal modifiers. Stop the server cleanly before changing the value, then recreate it with `docker compose up -d`.
 
 ### Settings defined directly in Compose
 
@@ -128,10 +135,10 @@ Allow outbound internet access for downloads and Steam services. If behind a rou
 If using UFW, allow your actual SSH port before enabling it:
 
 ```bash
-sudo ufw allow OpenSSH
-sudo ufw allow 2456:2457/udp
-sudo ufw enable
-sudo ufw status
+ufw allow OpenSSH
+ufw allow 2456:2457/udp
+ufw enable
+ufw status
 ```
 
 **Docker-published ports can bypass UFW rules.** Enforce source-IP restrictions at the provider firewall or configure Docker-aware forwarding rules; do not rely on a UFW deny rule to hide published ports. See [Docker's firewall documentation](https://docs.docker.com/engine/network/packet-filtering-firewalls/).
@@ -196,7 +203,7 @@ For the future HTTPS deployment:
 1. Install and configure Nginx with an HTTPS virtual host for `api.example.com` and a certificate covering that hostname. Use a publicly trusted certificate if direct browser access to the origin is needed, or a Cloudflare Origin CA certificate for access through Cloudflare.
 2. Add the proxied `api` DNS record shown above and set Cloudflare SSL/TLS mode to **Full (strict)** so the origin connection is also encrypted and its certificate validated.
 3. Allow inbound TCP 443 at the provider and host firewalls. Allow TCP 80 if using HTTP-to-HTTPS redirects or an HTTP certificate-validation flow. Keep the database and API backend port private.
-4. Configure certificate renewal as appropriate for the certificate issuer, validate the Nginx configuration with `sudo nginx -t`, then reload Nginx and test an implemented API endpoint over HTTPS.
+4. Configure certificate renewal as appropriate for the certificate issuer, validate the Nginx configuration with `nginx -t`, then reload Nginx and test an implemented API endpoint over HTTPS.
 
 These are deployment instructions for the future API; the current Compose file contains only the game server. See [Cloudflare proxy behavior](https://developers.cloudflare.com/dns/proxy-status/) for the distinction between proxied and DNS-only hostnames.
 
@@ -206,9 +213,9 @@ Nginx can optionally forward game traffic using its separate [UDP `stream` proxy
 
 ```bash
 cd /opt/valheim
-sudo docker compose pull
-sudo docker compose up -d
-sudo docker compose logs --follow --tail=100 valheim
+docker compose pull
+docker compose up -d
+docker compose logs --follow --tail=100 valheim
 ```
 
 First startup downloads the game server and can take several minutes. Ctrl+C exits the log viewer without stopping the server. Check logs for successful startup and errors; a running container alone does not prove that the game is ready.
@@ -220,15 +227,15 @@ This configuration uses Steam networking. For non-Steam clients, review the [con
 Useful operations:
 
 ```bash
-sudo docker compose ps
-sudo docker stats --no-stream
+docker compose ps
+docker stats --no-stream
 free -h
-sudo du -sh data/*
-sudo docker compose stop       # Graceful shutdown with up to two minutes to save
-sudo docker compose up -d     # Start again; startup may update the game
+du -sh data/*
+docker compose stop       # Graceful shutdown with up to two minutes to save
+docker compose up -d      # Start again; startup may update the game
 ```
 
-The restart policy starts the service after a host reboot unless you explicitly stopped it. After editing `.env` or Compose, run `sudo docker compose up -d`; `restart` alone does not apply configuration changes.
+The restart policy starts the service after a host reboot unless you explicitly stopped it. After editing `.env` or Compose, run `docker compose up -d`; `restart` alone does not apply configuration changes.
 
 ## 6. Backups and restore
 
@@ -245,11 +252,11 @@ Create a manual backup on the server:
 
 ```bash
 cd /opt/valheim
-sudo docker compose stop valheim
+docker compose stop valheim
 backup_file="backups/config-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-sudo tar -czf "$backup_file" -C data config
-sudo tar -tzf "$backup_file" >/dev/null
-sudo docker compose up -d
+tar -czf "$backup_file" -C data config
+tar -tzf "$backup_file" >/dev/null
+docker compose up -d
 ```
 
 If archiving or verification fails, fix that before upgrading. Save `.env` and Compose separately in secure storage, too.
@@ -258,12 +265,12 @@ To restore a manual archive, replace the example filename with an actual backup.
 
 ```bash
 cd /opt/valheim
-sudo docker compose stop valheim
-sudo tar -tzf backups/config-TIMESTAMP.tar.gz
-sudo mv data/config "data/config-before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
-sudo tar -xzf backups/config-TIMESTAMP.tar.gz -C data
-sudo docker compose up -d
-sudo docker compose logs --tail=100 valheim
+docker compose stop valheim
+tar -tzf backups/config-TIMESTAMP.tar.gz
+mv data/config "data/config-before-restore-$(date -u +%Y%m%dT%H%M%SZ)"
+tar -xzf backups/config-TIMESTAMP.tar.gz -C data
+docker compose up -d
+docker compose logs --tail=100 valheim
 ```
 
 The commands above restore our tar archives, not the container's scheduled ZIP backups. For a scheduled backup, inspect and extract it into a temporary directory while stopped, then replace the matching world under `data/config/worlds_local/`, preserving a copy of the previous world first. Test joining and verify world progress after any restore.
@@ -272,20 +279,15 @@ The commands above restore our tar archives, not the container's scheduled ZIP b
 
 There are two independent updates: the Docker image supplies the runtime, while Steam supplies the game binaries. This configuration disables scheduled updates and restarts for planned maintenance; **starting the container still checks/installs game updates**. A host reboot can therefore update the game. See the [container update documentation](https://github.com/community-valheim-tools/valheim-server-docker#updates).
 
-For a planned upgrade, notify players and have them disconnect. Then:
+For a planned upgrade, notify players and have them disconnect. Then run the upgrade script from the project directory:
 
 ```bash
 cd /opt/valheim
-# Download the new container first, keeping the current game running.
-sudo docker compose pull valheim
-sudo docker compose stop valheim
-backup_file="backups/pre-upgrade-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-sudo tar -czf "$backup_file" -C data config
-sudo tar -tzf "$backup_file" >/dev/null
-# Continue only after the backup succeeds.
-sudo docker compose up -d --force-recreate valheim
-sudo docker compose logs --follow --tail=100 valheim
+./upgrade.sh
+docker compose logs --follow --tail=100 valheim
 ```
+
+The script takes the Compose project down, pulls the latest Valheim image, creates and verifies a timestamped `backups/pre-upgrade-*.tar.gz` archive of `data/config`, and starts the service again. If pulling or backing up fails, it attempts to start the service again and exits with an error.
 
 Update clients as well, join the server, and verify the expected world loaded. Merely pulling an image does not update the running container. To check for a game update without changing the image, follow the same backup procedure and recreate the container without the pull step.
 
@@ -299,7 +301,7 @@ Current operational logs are bounded to approximately 100 MB per container. They
 
 ```bash
 cd /opt/valheim
-sudo docker compose logs --no-color --timestamps valheim > "backups/server-$(date -u +%Y%m%dT%H%M%SZ).log"
+docker compose logs --no-color --timestamps valheim > "backups/server-$(date -u +%Y%m%dT%H%M%SZ).log"
 ```
 
 Suggested next implementation:
@@ -315,5 +317,5 @@ The container's built-in status HTTP endpoint requires a publicly listed server,
 
 - **Cannot connect:** confirm DNS-only resolution, UDP rules at the provider/router, matching client/server versions, and startup logs. An HTTP request or TCP port test cannot verify the UDP game service.
 - **Unexpected empty world:** check `WORLD_NAME`, the mounted save location, and permission errors before playing further. Stop the service before moving saves.
-- **Crashes or lag:** inspect `sudo docker stats --no-stream`, `free -h`, disk usage, and `sudo journalctl -k` for out-of-memory kills. Increase resources based on measurements.
+- **Crashes or lag:** inspect `docker stats --no-stream`, `free -h`, disk usage, and `journalctl -k` for out-of-memory kills. Increase resources based on measurements.
 - **Version mismatch after an update:** wait for the download/startup to finish, update clients, and inspect logs for Steam download failures.
