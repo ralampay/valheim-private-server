@@ -49,6 +49,15 @@ echo "Creating ${backup_file}..."
 tar -czf "$backup_file" -C data config
 tar -tzf "$backup_file" >/dev/null
 
+echo "Downloading and validating the latest Valheim server from Steam..."
+docker compose run --rm --no-deps \
+  --entrypoint /opt/steamcmd/steamcmd.sh \
+  "$service" \
+  +force_install_dir /opt/valheim/dl/server \
+  +login anonymous \
+  +app_update 896660 validate \
+  +quit
+
 echo "Starting ${service}..."
 docker compose up -d "$service"
 service_stopped=false

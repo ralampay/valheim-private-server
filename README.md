@@ -287,7 +287,7 @@ cd /opt/valheim
 docker compose logs --follow --tail=100 valheim
 ```
 
-The script takes the Compose project down, pulls the latest Valheim image, creates and verifies a timestamped `backups/pre-upgrade-*.tar.gz` archive of `data/config`, and starts the service again. If pulling or backing up fails, it attempts to start the service again and exits with an error.
+The script takes the Compose project down, pulls the latest Valheim image, creates and verifies a timestamped `backups/pre-upgrade-*.tar.gz` archive of `data/config`, explicitly runs SteamCMD to download and validate the latest Valheim Dedicated Server release, and starts the service again. If pulling, backing up, or the Steam download fails, it attempts to start the service again and exits with an error.
 
 Update clients as well, join the server, and verify the expected world loaded. Merely pulling an image does not update the running container. To check for a game update without changing the image, follow the same backup procedure and recreate the container without the pull step.
 
