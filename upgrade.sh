@@ -8,8 +8,8 @@ service="valheim"
 backup_dir="backups"
 upgrade_timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 backup_file="${backup_dir}/pre-upgrade-${upgrade_timestamp}.tar.gz"
-steam_app_manifest="data/server/dl/server/steamapps/appmanifest_896660.acf"
-steam_app_manifest_backup="${steam_app_manifest}.pre-upgrade-${upgrade_timestamp}"
+steam_download_dir="/opt/valheim/dl/server"
+steam_download_backup="/opt/valheim/dl/server.pre-upgrade-${upgrade_timestamp}"
 service_stopped=false
 
 download_valheim() {
@@ -20,6 +20,50 @@ download_valheim() {
     +login anonymous \
     +app_update 896660 validate \
     +quit
+}
+
+prepare_clean_steam_download() {
+  docker compose run --rm --no-deps \
+    --entrypoint /bin/sh \
+    "$service" \
+    -c 'set -eu
+      download_dir=$1
+      download_backup=$2
+
+      if [ -e "$download_backup" ]; then
+        echo "Steam download backup already exists: $download_backup" >&2
+        exit 1
+      fi
+
+      if [ -e "$download_dir" ]; then
+        mv -- "$download_dir" "$download_backup"
+      fi
+
+      mkdir -p "$download_dir"' \
+    sh "$steam_download_dir" "$steam_download_backup"
+}
+
+restore_steam_download() {
+  docker compose run --rm --no-deps \
+    --entrypoint /bin/sh \
+    "$service" \
+    -c 'set -eu
+      download_dir=$1
+      download_backup=$2
+
+      rm -rf -- "$download_dir"
+      if [ -e "$download_backup" ]; then
+        mv -- "$download_backup" "$download_dir"
+      fi' \
+    sh "$steam_download_dir" "$steam_download_backup"
+}
+
+remove_steam_download_backup() {
+  docker compose run --rm --no-deps \
+    --entrypoint /bin/sh \
+    "$service" \
+    -c 'rm -rf -- "$1"' \
+    sh "$steam_download_backup"
 }
 
 restore_service_on_error() {
@@ -62,24 +106,18 @@ echo "Creating ${backup_file}..."
 tar -czf "$backup_file" -C data config
 tar -tzf "$backup_file" >/dev/null
 
-echo "Downloading and validating the latest Valheim server from Steam..."
+echo "Moving the existing Steam download cache aside..."
+prepare_clean_steam_download
+
+echo "Downloading and validating a fresh Valheim server from Steam..."
 if ! download_valheim; then
-  if [[ ! -f "$steam_app_manifest" ]]; then
-    echo "SteamCMD failed and no app manifest is available for recovery." >&2
-    false
-  fi
-
-  echo "SteamCMD failed; backing up its app manifest and retrying once..." >&2
-  mv -- "$steam_app_manifest" "$steam_app_manifest_backup"
-
-  if ! download_valheim; then
-    echo "SteamCMD retry failed; restoring the previous app manifest." >&2
-    mv -f -- "$steam_app_manifest_backup" "$steam_app_manifest"
-    false
-  fi
-
-  echo "SteamCMD recovered. Previous app manifest saved to ${steam_app_manifest_backup}."
+  echo "SteamCMD failed; restoring the previous Steam download cache." >&2
+  restore_steam_download
+  false
 fi
+
+echo "Removing the previous Steam download cache..."
+remove_steam_download_backup
 
 echo "Starting ${service}..."
 docker compose up -d "$service"
